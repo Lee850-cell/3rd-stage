@@ -1,0 +1,22 @@
+# 可執行文件
+*.exe
+*.out
+*.app
+jacobi
+test
+mpi_test
+*.o
+
+# 編譯生成的文件
+*.mod
+*.dSYM/
+
+# VS Code 配置
+.vscode/
+*.code-workspace
+
+# 臨時文件
+*.tmp
+*.log
+*.bak
+*~
