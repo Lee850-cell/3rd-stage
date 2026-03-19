@@ -33,7 +33,7 @@ int main(int argc, char** argv) {
         for (int i = 1; i < numprocs && i <= ROWS; i++) {
             MPI_Send(a[numsent].data(), COLS, MPI_DOUBLE, i, numsent + 1, MPI_COMM_WORLD);
             numsent++;
-        }
+        } 
 
         // 3. 動態循環：收一個，發一個
         for (int i = 0; i < ROWS; i++) {

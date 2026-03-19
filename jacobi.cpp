@@ -10,25 +10,26 @@ const int STEPS = 10;            // 迭代次數
 int main(int argc, char** argv) {
     int myid, numprocs;
     
-    MPI_Init(&argc, &argv);
-    MPI_Comm_rank(MPI_COMM_WORLD, &myid);
-    MPI_Comm_size(MPI_COMM_WORLD, &numprocs);
+    MPI_Init(&argc, &argv);//initialize MPI
+    MPI_Comm_rank(MPI_COMM_WORLD, &myid);//get rank of current process
+    MPI_Comm_size(MPI_COMM_WORLD, &numprocs);//get number of processes
     
     if (numprocs != 4) {
         if (myid == 0) {
-            std::cerr << "This program requires exactly 4 processes!" << std::endl;
+            std::cerr << "Are you fucking serious?" << std::endl;
         }
         MPI_Finalize();
         return 1;
     }
     
+
     std::cout << "Process " << myid << " of " << numprocs << " is alive" << std::endl;
     
-    // 定義局部數組（包含邊界）
+    // initialize arrays
     std::vector<std::vector<double>> a(TOTAL_SIZE, std::vector<double>(MY_SIZE + 2, 0.0));
     std::vector<std::vector<double>> b(TOTAL_SIZE, std::vector<double>(MY_SIZE + 2, 0.0));
     
-    // 數組初始化
+    // initialize boundary values
     if (myid == 0) {
         for (int i = 0; i < TOTAL_SIZE; i++) {
             a[i][1] = 8.0;  // 第2列（索引1）
@@ -40,17 +41,17 @@ int main(int argc, char** argv) {
         }
     }
     
-    // 邊界初始化
+    // initialize boundary values
     for (int i = 0; i < MY_SIZE + 2; i++) {
         a[0][i] = 8.0;               // 第一行
         a[TOTAL_SIZE - 1][i] = 8.0;  // 最後一行
     }
     
-    // Jacobi 迭代
+    // Jacobi alternative
     for (int n = 0; n < STEPS; n++) {
         MPI_Status status;
         
-        // 從右側鄰居接收數據
+        // recv from right neighbor
         if (myid < 3) {
             std::vector<double> recv_buf(TOTAL_SIZE);
             MPI_Recv(recv_buf.data(), TOTAL_SIZE, MPI_DOUBLE, myid + 1, 10, 
@@ -60,7 +61,7 @@ int main(int argc, char** argv) {
             }
         }
         
-        // 向左側鄰居發送數據
+        // send to left neighbor
         if (myid > 0) {
             std::vector<double> send_buf(TOTAL_SIZE);
             for (int i = 0; i < TOTAL_SIZE; i++) {
@@ -70,7 +71,7 @@ int main(int argc, char** argv) {
                      MPI_COMM_WORLD);
         }
         
-        // 向右側鄰居發送數據
+        // send to right neighbor
         if (myid < 3) {
             std::vector<double> send_buf(TOTAL_SIZE);
             for (int i = 0; i < TOTAL_SIZE; i++) {
@@ -80,7 +81,7 @@ int main(int argc, char** argv) {
                      MPI_COMM_WORLD);
         }
         
-        // 從左側鄰居接收數據
+        //  recv from left neighbor
         if (myid > 0) {
             std::vector<double> recv_buf(TOTAL_SIZE);
             MPI_Recv(recv_buf.data(), TOTAL_SIZE, MPI_DOUBLE, myid - 1, 10, 
@@ -90,25 +91,25 @@ int main(int argc, char** argv) {
             }
         }
         
-        // 設定計算邊界
+        // calculate new values
         int begin_col = 1;      // 第2列（索引1）
         int end_col = MY_SIZE;  // 倒數第2列
         
         if (myid == 0) {
-            begin_col = 2;  // 跳過左邊界
+            begin_col = 2;  // except left boundary
         }
         if (myid == 3) {
-            end_col = MY_SIZE - 1;  // 跳過右邊界
+            end_col = MY_SIZE - 1;  // except for right boundary
         }
         
-        // 計算新值
+        // compute new values
         for (int j = begin_col; j <= end_col; j++) {
             for (int i = 1; i < TOTAL_SIZE - 1; i++) {
                 b[i][j] = (a[i][j+1] + a[i][j-1] + a[i+1][j] + a[i-1][j]) * 0.25;
             }
         }
         
-        // 更新數組
+        // update arrays
         for (int j = begin_col; j <= end_col; j++) {
             for (int i = 1; i < TOTAL_SIZE - 1; i++) {
                 a[i][j] = b[i][j];
@@ -116,7 +117,7 @@ int main(int argc, char** argv) {
         }
     }
     
-    // 輸出結果
+    // output
     std::cout << std::fixed << std::setprecision(4);
     for (int i = 1; i < TOTAL_SIZE - 1; i++) {
         std::cout << "Process " << myid << ": ";
