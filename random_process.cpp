@@ -11,10 +11,22 @@ int main(int argc, char** argv) {
     MPI_Comm_size(MPI_COMM_WORLD, &world_size);
     MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
 
+    MPI_Barrier(MPI_COMM_WORLD); // 同步所有進程
+    double total_start_time = MPI_Wtime(); // 計時開始時間
+
+
     // --- 全局參數 ---
-    const int N = 2000;          // 全局矩陣大小 N*N
+    // 預設 N 為 2000
+    int N = 2000; 
+
+// 如果使用者在執行時有輸入參數，就讀取它
+    if (argc > 1) {
+        N = std::atoi(argv[1]); 
+    }       // 全局矩陣大小 N*N
     const int max_iter = 1000;    // 迭代步數
     const float BC_TEMP = 100.0f; // 邊界溫度
+
+    double init_start_time = MPI_Wtime(); // 計時開始時間
 
     // 2. 創建二維笛卡爾拓撲 (2D Domain Decomposition)
     int dims[2] = {0, 0}; 
@@ -65,11 +77,16 @@ int main(int argc, char** argv) {
     std::vector<float> col_send(local_N);
     std::vector<float> col_recv(local_N);
 
+    double init_time = MPI_Wtime() - init_start_time; // 計時結束時間
+
+
+    double comm_time = 0.0;
+    double comp_time = 0.0;
     // 6. 迭代主循環
     for (int iter = 0; iter < max_iter; ++iter) {
         
         // --- A. 數據交換 (影子格交換) ---
-        
+        double t_comm_start = MPI_Wtime();
         // 1. 上下交換 (行交換，內存連續)
         // 向下發送最後一行真實數據，接收上方影子格
         MPI_Sendrecv(&A[idx(local_N, 1)], local_M, MPI_FLOAT, down, 0,
@@ -98,8 +115,10 @@ int main(int argc, char** argv) {
         if (right != MPI_PROC_NULL) {
             for(int i=1; i<=local_N; ++i) A[idx(i, local_M+1)] = col_recv[i-1];
         }
+        comm_time += (MPI_Wtime() - t_comm_start);
 
-        // --- B. Jacobi 核心計算 ---
+       
+        double t_comp_start = MPI_Wtime(); // --- B. Jacobi 核心計算 ---
         // 只計算內部真實數據區，邊界保持不變（如果是物理邊界的話）
         for (int i = 1; i <= local_N; ++i) {
             for (int j = 1; j <= local_M; ++j) {
@@ -120,6 +139,7 @@ int main(int argc, char** argv) {
         
         // 緩衝區交換 (指針交換在 vector 中可用 A = B 代替，但注意 A = B 會發生拷貝)
         A = B;
+        comp_time += (MPI_Wtime() - t_comp_start);
 
         // 每 10 步打印一次進度
         if (world_rank == 0 && iter % 10 == 0) {
@@ -143,6 +163,9 @@ int main(int argc, char** argv) {
     // ===========================================================
 
     // 1. 準備本地數據（去掉影子格，只取中間真實的 local_N * local_M 部分）
+    MPI_Barrier(MPI_COMM_WORLD);
+    double io_start = MPI_Wtime();
+
     std::vector<float> local_data;
     local_data.reserve(local_N * local_M);
     for (int i = 1; i <= local_N; ++i) {
@@ -198,11 +221,38 @@ int main(int argc, char** argv) {
         // --- 其他 Rank 的工作：把自己的數據發給 Rank 0 ---
         MPI_Send(local_data.data(), local_N * local_M, MPI_FLOAT, 0, 99, cart_comm);
     }
+    double io_time = MPI_Wtime() - io_start;
 
     // ===========================================================
     // 輸出結束
     // ===========================================================
+    MPI_Barrier(MPI_COMM_WORLD);
+    double total_time = MPI_Wtime() - total_start_time;
 
+    double max_init, max_comp, max_comm, max_io, max_total;
+    MPI_Reduce(&init_time, &max_init, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+    MPI_Reduce(&comp_time, &max_comp, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+    MPI_Reduce(&comm_time, &max_comm, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+    MPI_Reduce(&io_time, &max_io, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+    MPI_Reduce(&total_time, &max_total, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+
+    if (world_rank == 0) {
+        std::cout << "\n========== 性能分析報告 ==========\n";
+        std::cout << "矩陣大小: " << N << "x" << N << " | 迭代次數: " << max_iter << "\n";
+        std::cout << "進程總數: " << world_size << " (" << dims[0] << "x" << dims[1] << " 網格)\n";
+        std::cout << "----------------------------------\n";
+        std::cout << std::fixed << std::setprecision(4);
+        std::cout << "初始化耗時: " << max_init << " 秒\n";
+        std::cout << "純計算耗時: " << max_comp << " 秒\n";
+        std::cout << "純通信耗時: " << max_comm << " 秒\n";
+        std::cout << "文件IO耗時: " << max_io << " 秒\n";
+        std::cout << "程序總耗時: " << max_total << " 秒\n";
+        std::cout << "----------------------------------\n";
+        std::cout << "通信佔比: " << (max_comm / max_total) * 100.0 << " %\n";
+        std::cout << "計算佔比: " << (max_comp / max_total) * 100.0 << " %\n";
+        std::cout << "==================================\n";
+        std::cout << "結果已保存至 result.txt\n";
+    }
     MPI_Finalize();
     return 0;
 }
