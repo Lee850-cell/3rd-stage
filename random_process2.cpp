@@ -196,15 +196,14 @@ int main(int argc, char** argv) {
         // 注意：在實際論文中，T_base 應該是你單機跑 1 個進程時測得的「純計算 + 初始化」時間。
         // 這裡我們假設一個估算值，或者你可以手動填入你之前測得的單核數據。
         // 為了演示邏輯，這裡假設理想狀態下的單核時間為 max_comp * world_size
-        double T_base = 109.03;
-        
+        double T_base = 27.82; // 单核基准时间
 
-        // --- 2. 計算並行指標 ---
-        // 加速比 Sp = T_base / T_p (T_p 為當前多核總耗時)
-        double speedup = T_base / max_total;
-        
-        // 並行效率 E = Sp / p = T_base / (p * T_p)
-        double efficiency = (speedup / world_size) * 100.0;
+    // --- 如果你做【强扩展】 (N 固定) ---
+        double speedup_strong = T_base / max_total;
+        double efficiency_strong = (speedup_strong / world_size) * 100.0;
+
+    // --- 如果你做【弱扩展】 (每个核的 N/dims 不变，总 N 随核数变大) ---
+        double efficiency_weak = (T_base / max_total) * 100.0;
 
         std::cout << "\n========== 性能分析報告 (符合論文標准) ==========\n";
         std::cout << "矩陣大小: " << N << "x" << N << " | 迭代次數: " << max_iter << "\n";
@@ -219,8 +218,9 @@ int main(int argc, char** argv) {
         std::cout << "----------------------------------\n";
         
         // 論文核心指標輸出
-        std::cout << ">> 加速比 (Speedup): " << speedup << " (相對於預估單核)\n";
-        std::cout << ">> 並行效率 (Efficiency): " << efficiency << " %\n";
+        std::cout << ">> 加速比 (Speedup): " << speedup_strong << " (相對於預估單核)\n";
+        std::cout << ">> 强扩展效率: " << efficiency_strong << " %" << std::endl;
+        std::cout << ">> 弱扩展效率: " << efficiency_weak << " %" << std::endl;
         
         std::cout << "----------------------------------\n";
         std::cout << "通信開銷佔比: " << (max_comm / max_total) * 100.0 << " %\n";
